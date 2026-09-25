@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en" data-ui-style="modern" data-icons="bootstrap">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1b1a19">
+<title>Draft Chat</title>
+
+<!-- the chat's own stylesheets, from your app folder -->
+<link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="pages.css">
+
+<style>
+/* ═══ the standalone shell ═══ */
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+html body.standalone{
+  display:grid !important;
+  /* header · page bar · cards · status bar  (the app's topbar/menubar/stage/status) */
+    grid-template-rows:44px 52px minmax(0,1fr) 22px !important;
+  grid-template-areas:none !important;
+  height:100vh !important; min-height:0 !important; overflow:hidden !important;
+  margin:0 !important; background:var(--bg) !important; color:var(--ink) !important;
+  font-family:var(--ui) !important; font-size:13.5px !important;
+}
+html body #page-draft{
+  display:flex !important; flex-direction:column !important;
+  height:100% !important; min-height:0 !important; overflow:hidden !important;
+}
+
+/* ── row 1 · the header (logo · stats · settings) ──
+   .logo-btn / .logo-mark / .logo-text / .topbar-btn come from app.css:
+   this is the app's own top bar, not a copy of it. */
+.sa-top{
+  display:flex; align-items:center; gap:12px; padding:0 16px;
+  background:var(--bg); border-bottom:1px solid var(--line); z-index:6;
+}
+.sa-top .logo-btn{ padding:4px; cursor:default; }
+
+/* ── row 2 · the page bar is the app's own .sf-bar card, its buttons .ol-btn chips ── */
+.sa-spacer{ flex:1 1 auto; }
+.sf-bar{ z-index:5; }
+.sf-bar .ol-btn{ justify-content:center; }
+.sf-bar .ol-btn i{ font-size:12px; }
+
+/* ── row 4 · the status bar ── */
+.sa-status{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:14px; padding:0 16px; background:var(--bg);
+  border-top:1px solid var(--line); font-size:10.5px;
+  color:var(--ink-3); overflow:hidden; white-space:nowrap;
+}
+.sa-status .sb-left, .sa-status .sb-right{ display:flex; align-items:center; gap:14px; min-width:0; }
+.sa-status span{ display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis; }
+.sa-status i{ font-size:11px; }
+.sa-status .sb-dot{ width:6px; height:6px; border-radius:50%; background:var(--ok); }
+.sa-status .sb-dot.warn{ background:var(--warn); }
+.sa-status .sb-dot.err{ background:var(--err); }
+
+/* ── the popovers (T panel, stats) ── */
+.sa-pop{
+  position:fixed; top:100px; left:16px; z-index:400; width:300px;
+    background:var(--surface-2); border:0;
+  border-radius:var(--r-md); box-shadow:var(--e-3); padding:10px;
+  display:flex; flex-direction:column;
+}
+.sa-pop.right{ left:auto; right:16px; top:48px; width:320px; }
+.sa-pop[hidden]{ display:none !important; }
+.sa-pop .set-row{ padding:8px 0; }
+.sa-pop .set-label{ font-size:12.5px; }
+.sa-pop .set-desc{ font-size:11px; }
+
+/* ── the draft cards ── */
+#draftBody[hidden]{ display:none !important; }
+.draft-list-acts{ display:flex; align-items:center; gap:2px; flex:0 0 auto; }
+.draft-pane-title{
+  flex:1 1 auto; min-width:0; background:transparent; border:0; outline:none;
+  color:var(--ink); font-size:16px; font-weight:600; font-family:inherit;
+}
+/* the T panel — no outline on the card or its fields */
+.sa-pop .sel,
+.sa-pop .inp{
+  background:var(--surface-3);
+  border:0 !important;
+  outline:none !important;
+  box-shadow:none !important;
+  border-radius:var(--r-sm);
+}
+
+.sa-pop .sel:hover,  .sa-pop .inp:hover,
+.sa-pop .sel:focus,  .sa-pop .inp:focus,
+.sa-pop .sel:active, .sa-pop .inp:active{
+  border:0 !important;
+  outline:none !important;
+  box-shadow:none !important;
+}
+/* the hairlines between Font / Size / Line height.
+   pages.css line 8407 sets these !important, so this must too. */
+.sa-pop .set-row{
+  border-bottom:0 !important;
+  padding:6px 0 !important;
+}
+.sa-pop .set-row:first-of-type{ padding-top:0 !important; }
+.sa-pop .set-row:last-child{ padding-bottom:0 !important; }
+/* the native number spinners on Size / Line height */
+.sa-pop .inp[type="number"]{ -moz-appearance:textfield; appearance:textfield; }
+.sa-pop .inp[type="number"]::-webkit-outer-spin-button,
+.sa-pop .inp[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance:none; margin:0;
+}
+.draft-pane-body{
+  flex:1 1 auto; min-height:0; overflow-y:auto; outline:none;
+  padding:28px 32px 120px; color:var(--ink); line-height:1.8;
+  white-space:pre-wrap; word-break:break-word;
+}
+.draft-pane-foot{
+  flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  gap:10px; padding:8px 14px; border-top:1px solid var(--line-2);
+  font-size:10.5px; color:var(--ink-4);
+}
+#page-draft .draft-pane-head{ border-bottom:0; }
+
+/* ── toast ── */
+#sfToast{
+  position:fixed; left:50%; bottom:24px; transform:translate(-50%,14px);
+  background:var(--surface-3); border:1px solid var(--line-2); color:var(--ink);
+  padding:9px 16px; border-radius:var(--r-md); font-size:12.5px;
+  box-shadow:var(--e-3); opacity:0; pointer-events:none;
+  transition:all var(--t-med) var(--ease); z-index:900;
+}
+#sfToast.on{ opacity:1; transform:translate(-50%,0); }
+#sfToast.err{ border-color:var(--err); }
+#sfToast.warn{ border-color:var(--warn); }
+</style>
+</head>
+
+<body class="standalone">
+
+<!-- ═══ ROW 1 · HEADER — app logo · chat stats · settings ═══ -->
+<header class="sa-top">
+  <div class="logo-btn" title="Draft Chat">
+    <span class="logo-mark"><i class="bi bi-chat-square-text-fill"></i></span>
+  </div>
+  <span class="sa-spacer"></span>
+  <button class="topbar-btn" id="saStats" title="Chat statistics"><i class="bi bi-bar-chart"></i></button>
+  <button class="topbar-btn" id="saSetTop" title="Settings"><i class="bi bi-gear"></i></button>
+  <div class="sa-pop right" id="saStatsPop" hidden></div>
+</header>
+
+
+<!-- ═══ ROW 2 · THE PAGE BAR ═══ -->
+<header class="sf-bar">
+  <button class="ol-btn" id="saTypo" title="Font, size and leading"><i class="bi bi-fonts"></i></button>
+  <button class="ol-btn" id="saNew" title="New draft"><i class="bi bi-plus-lg"></i> <span id="saNewLabel">New draft</span></button>
+  <span class="sa-spacer"></span>
+  <button class="ol-btn" id="saView" title="Switch to draft"><i class="bi bi-journal-text"></i></button>
+  <button class="ol-btn" id="saSet" title="Settings"><i class="bi bi-sliders"></i></button>
+  <div class="sa-pop" id="saPop" hidden></div>
+</header>
+
+
+<!-- ═══ ROW 3 · THE CARDS ═══ -->
+<main id="page-draft"></main>
+
+<!-- ═══ ROW 4 · STATUS BAR ═══ -->
+<footer class="sa-status">
+  <div class="sb-left" id="saSbLeft"></div>
+  <div class="sb-right" id="saSbRight"></div>
+</footer>
+
+<!-- ═══ THE SHIM — the smallest ScriptForge the chat and the draft view need ═══ -->
+<script>
+(function(){
+  const LS = 'sf-standalone';
+  function loadLS(){ try{ return JSON.parse(localStorage.getItem(LS) || '{}'); }catch(e){ return {}; } }
+  const boot = loadLS();
+
+  window.S = window.S || {};
+  S.config = Object.assign({
+    provider:'groq', aiKeys:{}, aiBases:{}, modelByProvider:{},
+    temperature:0.7, maxTokens:1024
+  }, boot.config || {});
+  S.mode = boot.mode || 'novel';      /* 'novel' | 'screenplay' */
+  S.page = 'draft';
+
+  let D_ = Object.assign({ aiChats:[], aiChatActive:null, drafts:[] }, boot.data || {});
+  window.D = function(){ return D_; };
+
+  window.save = function(){
+    try{ localStorage.setItem(LS, JSON.stringify({ config:S.config, data:D_, mode:S.mode })); }catch(e){}
+  };
+  window.debounce = function(fn, ms){
+    let t; return function(){ const a = arguments, self = this;
+      clearTimeout(t); t = setTimeout(function(){ fn.apply(self, a); }, ms); };
+  };
+  window.uid = function(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); };
+  window.esc = function(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  };
+  window.toast = function(msg, kind){
+    let el = document.getElementById('sfToast');
+    if(!el){ el = document.createElement('div'); el.id = 'sfToast'; document.body.appendChild(el); }
+    el.textContent = String(msg == null ? '' : msg);
+    el.className = 'on' + (kind ? ' ' + kind : '');
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.className = ''; }, 2600);
+  };
+
+  window.AI_PROVIDERS = [
+    { id:'groq', name:'Groq — fast, free', group:'Free API tiers', base:'https://api.groq.com/openai/v1',
+      keyLabel:'Groq API key', keyHint:'Free at console.groq.com', keyPh:'gsk_…',
+      about:'Free tier, very fast. Good default for drafting.',
+      models:[{id:'llama-3.3-70b-versatile',n:'Llama 3.3 70B'},{id:'llama-3.1-8b-instant',n:'Llama 3.1 8B'},{id:'openai/gpt-oss-120b',n:'GPT-OSS 120B'},{id:'qwen/qwen3-32b',n:'Qwen3 32B'}] },
+    { id:'gemini', name:'Google Gemini — free tier', group:'Free API tiers', base:'https://generativelanguage.googleapis.com/v1beta', gemini:true,
+      keyLabel:'Gemini API key', keyHint:'Free at aistudio.google.com/apikey', keyPh:'AIza…',
+      about:'Free tier with a large context window.',
+      models:[{id:'gemini-2.5-flash',n:'Gemini 2.5 Flash'},{id:'gemini-2.5-pro',n:'Gemini 2.5 Pro'},{id:'gemini-2.0-flash',n:'Gemini 2.0 Flash'}] },
+    { id:'openrouter', name:'OpenRouter — free models', group:'Free API tiers', base:'https://openrouter.ai/api/v1', freeOnly:true,
+      keyLabel:'OpenRouter key', keyHint:'Free at openrouter.ai/keys', keyPh:'sk-or-…',
+      about:'One key, many models — the :free ones cost nothing.',
+      models:[{id:'meta-llama/llama-3.3-70b-instruct:free',n:'Llama 3.3 70B (free)'},{id:'google/gemini-2.0-flash-exp:free',n:'Gemini 2.0 Flash (free)'},{id:'deepseek/deepseek-r1:free',n:'DeepSeek R1 (free)'},{id:'qwen/qwen3-235b-a22b:free',n:'Qwen3 235B (free)'}] },
+    { id:'cerebras', name:'Cerebras — free tier', group:'Free API tiers', base:'https://api.cerebras.ai/v1',
+      keyLabel:'Cerebras API key', keyHint:'Free at cloud.cerebras.ai', keyPh:'csk-…',
+      about:'Free tier, extremely fast inference.',
+      models:[{id:'llama3.1-8b',n:'Llama 3.1 8B'},{id:'llama-3.3-70b',n:'Llama 3.3 70B'},{id:'qwen-3-32b',n:'Qwen3 32B'}] },
+    { id:'mistral', name:'Mistral — free tier', group:'Free API tiers', base:'https://api.mistral.ai/v1',
+      keyLabel:'Mistral API key', keyHint:'Free at console.mistral.ai', keyPh:'…',
+      about:'Free experiment tier on La Plateforme.',
+      models:[{id:'mistral-small-latest',n:'Mistral Small'},{id:'open-mistral-nemo',n:'Mistral Nemo'},{id:'mistral-large-latest',n:'Mistral Large'}] },
+    { id:'sambanova', name:'SambaNova — free tier', group:'Free API tiers', base:'https://api.sambanova.ai/v1',
+      keyLabel:'SambaNova API key', keyHint:'Free at cloud.sambanova.ai', keyPh:'…',
+      about:'Generous free tier on fast open models.',
+      models:[{id:'Meta-Llama-3.3-70B-Instruct',n:'Llama 3.3 70B'},{id:'Meta-Llama-3.1-8B-Instruct',n:'Llama 3.1 8B'},{id:'DeepSeek-R1',n:'DeepSeek R1'}] },
+    { id:'together', name:'Together AI — free models', group:'Free API tiers', base:'https://api.together.xyz/v1',
+      keyLabel:'Together API key', keyHint:'Free at api.together.ai', keyPh:'…',
+      about:'Several models are free forever (look for -Free).',
+      models:[{id:'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',n:'Llama 3.3 70B (free)'},{id:'meta-llama/Llama-Vision-Free',n:'Llama Vision (free)'}] },
+    { id:'github', name:'GitHub Models — free with a GitHub token', group:'Free API tiers', base:'https://models.inference.ai.azure.com',
+      keyLabel:'GitHub personal token', keyHint:'Free at github.com/settings/tokens (needs models:read)', keyPh:'ghp_…',
+      about:'Free with any GitHub account — no billing needed.',
+      models:[{id:'gpt-4o-mini',n:'GPT-4o mini'},{id:'Llama-3.3-70B-Instruct',n:'Llama 3.3 70B'},{id:'Phi-3.5-MoE-instruct',n:'Phi-3.5 MoE'}] },
+    { id:'glm', name:'Zhipu GLM — free tier', group:'Free API tiers', base:'https://open.bigmodel.cn/api/paas/v4',
+      keyLabel:'Zhipu API key', keyHint:'Free at open.bigmodel.cn', keyPh:'…',
+      about:'GLM-4 Flash is free and strong at long-form text.',
+      models:[{id:'glm-4-flash',n:'GLM-4 Flash (free)'},{id:'glm-4-air',n:'GLM-4 Air'}] },
+    { id:'qwen', name:'Qwen (DashScope) — free quota', group:'Free API tiers', base:'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      keyLabel:'DashScope API key', keyHint:'Free at modelstudio.console.alibabacloud.com', keyPh:'sk-…',
+      about:'Free monthly quota, OpenAI-compatible endpoint.',
+      models:[{id:'qwen-plus',n:'Qwen Plus'},{id:'qwen-turbo',n:'Qwen Turbo'},{id:'qwen-max',n:'Qwen Max'}] },
+    { id:'ovh', name:'OVH AI Endpoints — free', group:'Free API tiers', base:'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1',
+      keyLabel:'OVH API key', keyHint:'Free at endpoints.ai.cloud.ovh.net', keyPh:'…',
+      about:'Free EU-hosted endpoints, no billing required.',
+      models:[{id:'Meta-Llama-3_3-70B-Instruct',n:'Llama 3.3 70B'},{id:'Qwen2.5-72B-Instruct',n:'Qwen2.5 72B'}] },
+    { id:'scaleway', name:'Scaleway — free beta', group:'Free API tiers', base:'https://api.scaleway.ai/v1',
+      keyLabel:'Scaleway API key', keyHint:'Free public beta at console.scaleway.com', keyPh:'…',
+      about:'Free public beta on European-hosted models.',
+      models:[{id:'llama-3.3-70b-instruct',n:'Llama 3.3 70B'},{id:'qwen2.5-coder-32b-instruct',n:'Qwen2.5 Coder 32B'}] },
+    { id:'nvidia', name:'NVIDIA NIM — free developer credits', group:'Free API tiers', base:'https://integrate.api.nvidia.com/v1',
+      keyLabel:'NVIDIA API key', keyHint:'Free at build.nvidia.com (1000 credits)', keyPh:'nvapi-…',
+      about:'Free credits with a NVIDIA developer account — strong open models.',
+      models:[{id:'meta/llama-3.3-70b-instruct',n:'Llama 3.3 70B'},{id:'nvidia/llama-3.3-nemotron-super-49b-v1',n:'Nemotron Super 49B'},{id:'deepseek-ai/deepseek-r1',n:'DeepSeek R1'},{id:'meta/llama-3.1-8b-instruct',n:'Llama 3.1 8B'}] },
+    { id:'nebius', name:'Nebius AI Studio — free credits', group:'Free API tiers', base:'https://api.studio.nebius.com/v1',
+      keyLabel:'Nebius API key', keyHint:'Free credits at studio.nebius.com', keyPh:'…',
+      about:'Free starting credits on fast open models.',
+      models:[{id:'meta-llama/Llama-3.3-70B-Instruct',n:'Llama 3.3 70B'},{id:'Qwen/Qwen3-235B-A22B',n:'Qwen3 235B'},{id:'deepseek-ai/DeepSeek-V3',n:'DeepSeek V3'}] },
+    { id:'hyperbolic', name:'Hyperbolic — free credits', group:'Free API tiers', base:'https://api.hyperbolic.xyz/v1',
+      keyLabel:'Hyperbolic API key', keyHint:'Free credits at app.hyperbolic.xyz', keyPh:'…',
+      about:'Free credits for open models, no card needed to start.',
+      models:[{id:'meta-llama/Llama-3.3-70B-Instruct',n:'Llama 3.3 70B'},{id:'Qwen/Qwen2.5-72B-Instruct',n:'Qwen2.5 72B'},{id:'deepseek-ai/DeepSeek-V3',n:'DeepSeek V3'}] },
+    { id:'chutes', name:'Chutes — free daily quota', group:'Free API tiers', base:'https://llm.chutes.ai/v1',
+      keyLabel:'Chutes API key', keyHint:'Free daily requests at chutes.ai', keyPh:'cpk_…',
+      about:'Free daily quota on large open models.',
+      models:[{id:'deepseek-ai/DeepSeek-V3-0324',n:'DeepSeek V3'},{id:'Qwen/Qwen3-235B-A22B',n:'Qwen3 235B'},{id:'meta-llama/Llama-3.3-70B-Instruct',n:'Llama 3.3 70B'}] },
+    { id:'cloudflare', name:'Cloudflare Workers AI — free daily allowance', group:'Free API tiers', base:'https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1', custom:true,
+      keyLabel:'Cloudflare API token', keyHint:'Free daily neurons at dash.cloudflare.com — put your account id in the endpoint', keyPh:'…',
+      about:'Free daily allowance. Swap YOUR_ACCOUNT_ID for your Cloudflare account id.',
+      models:[{id:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',n:'Llama 3.3 70B'},{id:'@cf/qwen/qwen2.5-coder-32b-instruct',n:'Qwen2.5 Coder 32B'}] },
+    { id:'ollama', name:'Ollama — local, no key', group:'Local (your machine)', base:'http://localhost:11434/v1', keyless:true,
+      keyLabel:'API key', keyHint:'Not needed — Ollama runs on your machine', keyPh:'(none)',
+      about:'Completely free and private. Needs Ollama running locally.',
+      models:[{id:'llama3.1',n:'Llama 3.1'},{id:'qwen2.5',n:'Qwen 2.5'},{id:'mistral',n:'Mistral'}] },
+    { id:'lmstudio', name:'LM Studio — local, no key', group:'Local (your machine)', base:'http://localhost:1234/v1', keyless:true,
+      keyLabel:'API key', keyHint:'Not needed — LM Studio runs on your machine', keyPh:'(none)',
+      about:'Completely free and private. Needs LM Studio local server.',
+      models:[{id:'local-model',n:'Currently loaded model'}] },
+    { id:'openai', name:'OpenAI — your own key', group:'Bring your own key', base:'https://api.openai.com/v1',
+      keyLabel:'OpenAI API key', keyHint:'platform.openai.com/api-keys', keyPh:'sk-…',
+      about:'Your own paid OpenAI key.',
+      models:[{id:'gpt-4o-mini',n:'GPT-4o mini'},{id:'gpt-4o',n:'GPT-4o'},{id:'gpt-4.1-mini',n:'GPT-4.1 mini'}] },
+    { id:'deepseek', name:'DeepSeek — your own key', group:'Bring your own key', base:'https://api.deepseek.com/v1',
+      keyLabel:'DeepSeek API key', keyHint:'platform.deepseek.com/api_keys', keyPh:'sk-…',
+      about:'Cheap keys and strong long-form writing.',
+      models:[{id:'deepseek-chat',n:'DeepSeek Chat'},{id:'deepseek-reasoner',n:'DeepSeek Reasoner'}] },
+    { id:'xai', name:'xAI Grok — your own key', group:'Bring your own key', base:'https://api.x.ai/v1',
+      keyLabel:'xAI API key', keyHint:'console.x.ai', keyPh:'xai-…',
+      about:'Grok models with your own key.',
+      models:[{id:'grok-3-mini',n:'Grok 3 mini'},{id:'grok-2-1212',n:'Grok 2'}] },
+    { id:'moonshot', name:'Moonshot Kimi — your own key', group:'Bring your own key', base:'https://api.moonshot.ai/v1',
+      keyLabel:'Moonshot API key', keyHint:'platform.moonshot.ai', keyPh:'sk-…',
+      about:'Kimi models — very long context.',
+      models:[{id:'kimi-k2-0711-preview',n:'Kimi K2'},{id:'moonshot-v1-128k',n:'Moonshot 128k'}] },
+    { id:'perplexity', name:'Perplexity Sonar — your own key', group:'Bring your own key', base:'https://api.perplexity.ai',
+      keyLabel:'Perplexity API key', keyHint:'perplexity.ai/settings/api', keyPh:'pplx-…',
+      about:'Search-grounded answers with your own key.',
+      models:[{id:'sonar',n:'Sonar'},{id:'sonar-pro',n:'Sonar Pro'}] },
+    { id:'custom', name:'Custom — any OpenAI-compatible endpoint', group:'Bring your own key', base:'', custom:true,
+      keyLabel:'API key', keyHint:'Your own key — stored only in this browser', keyPh:'sk-…',
+      about:'Point at any OpenAI-compatible API.',
+      models:[] }
+  ];
+  window.aiProvider = function(id){
+    return AI_PROVIDERS.find(function(p){ return p.id === (id || S.config.provider); }) || AI_PROVIDERS[0];
+  };
+
+  window.row = function(label, desc, control){
+    const r = document.createElement('div');
+    r.className = 'set-row';
+    const l = document.createElement('div');
+    l.innerHTML = '<div class="set-label">' + label + '</div>' +
+                  (desc ? '<div class="set-desc">' + desc + '</div>' : '');
+    r.appendChild(l);
+    const c = document.createElement('div');
+    c.className = 'set-ctrl';
+    if(typeof control === 'string') c.innerHTML = control;
+    else if(control && control instanceof Node) c.appendChild(control);
+    else if(Array.isArray(control)) control.forEach(function(n){ if(n && n instanceof Node) c.appendChild(n); });
+    else if(control !== undefined && control !== null) c.appendChild(document.createTextNode(String(control)));
+    r.appendChild(c);
+    return r;
+  };
+  window.card = function(title, icon){
+    const d = document.createElement('div');
+    d.className = 'set-card';
+    d.innerHTML = '<div class="set-card-title"><i class="bi bi-' + icon + '"></i> ' + title + '</div>';
+    return d;
+  };
+
+  /* ═══════════════════════════════════════════════════════════
+     DRAFTS — the left/right cards the draft icon swaps in.
+     Whichever draft is open is the context the chat reads: the index
+     sits in the hidden #draftBody carrier, the text in
+     D().drafts[i].body — the same two places draft-chat.js reads.
+     ═══════════════════════════════════════════════════════════ */
+  const SVG_X = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none">' +
+    '<path d="M2 2L8 8M8 2L2 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
+  const carrier = document.createElement('div');
+  carrier.id = 'draftBody';
+  carrier.hidden = true;
+  carrier.setAttribute('data-draft-body', '0');
+  document.body.appendChild(carrier);
+
+  const saveSoon = debounce(function(){ save(); paintStatus(); }, 500);
+
+  function drafts(){
+    if(!Array.isArray(D_.drafts)) D_.drafts = [];
+    D_.drafts.forEach(function(d){
+      if(!d.id) d.id = uid();
+      if(typeof d.title !== 'string') d.title = '';
+      if(typeof d.body  !== 'string') d.body  = '';
+    });
+    if(!D_.drafts.length) D_.drafts.push({ id:uid(), title:'', body:'', created:Date.now() });
+    return D_.drafts;
+  }
+  function activeIndex(){
+    const list = drafts();
+    let i = list.findIndex(function(d){ return d.id === S.config.draftActive; });
+    if(i < 0) i = 0;
+    S.config.draftActive = list[i].id;
+    return i;
+  }
+  function textOf(html){
+    return String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function words(html){
+    const t = textOf(html);
+    return t ? t.split(/\s+/).length : 0;
+  }
+  function listLabel(d){
+    const t = (d.title || '').trim();
+    if(t) return t;
+    const first = textOf(d.body);
+    return first ? first.slice(0, 40) : 'Untitled';
+  }
+  function applyTypo(){
+    const ed = document.getElementById('draftEditor');
+    if(!ed) return;
+    ed.style.fontFamily = S.config.draftFont || '';
+    ed.style.fontSize = (S.config.draftSize || 17) + 'px';
+    ed.style.lineHeight = S.config.draftLead || 1.8;
+  }
+  function renderDraftRows(){
+    const box = document.getElementById('saDrafts');
+    if(!box) return;
+    const list = drafts(), cur = activeIndex();
+    box.innerHTML = list.map(function(d, i){
+      return '<div class="draft-row' + (i === cur ? ' on' : '') + '" data-sa-open="' + esc(d.id) + '">' +
+        '<span class="draft-row-title">' + esc(listLabel(d)) + '</span>' +
+        '<span class="draft-row-acts">' +
+          '<button class="draft-act" data-sa-del="' + esc(d.id) + '" title="Remove">' + SVG_X + '</button>' +
+        '</span></div>';
+    }).join('');
+  }
+  function foot(){
+    const list = drafts(), i = activeIndex();
+    const c = document.getElementById('saCount');
+    if(c) c.textContent = words(list[i].body) + ' words';
+    const n = document.getElementById('saCount2');
+    if(n) n.textContent = list.length + (list.length === 1 ? ' draft' : ' drafts');
+  }
+  function openDraft(i){
+    const list = drafts();
+    i = Math.max(0, Math.min(i, list.length - 1));
+    S.config.draftActive = list[i].id;
+    carrier.setAttribute('data-draft-body', String(i));
+    const t = document.getElementById('saTitle');    if(t) t.value = list[i].title || '';
+    const e = document.getElementById('draftEditor'); if(e) e.innerHTML = list[i].body || '';
+    applyTypo(); renderDraftRows(); foot(); save(); paintStatus();
+  }
+  function newDraft(){
+    const d = { id:uid(), title:'', body:'', created:Date.now() };
+    drafts().unshift(d);
+    S.config.draftActive = d.id;
+    save();
+    DraftChat.close();                        /* re-renders into the draft view */
+    const t = document.getElementById('saTitle'); if(t) t.focus();
+  }
+
+  /* the base renderer — draft-chat.js wraps this, so opening the chat
+     replaces the draft cards and closing the chat brings them back */
+  function renderDraftView(root){
+    drafts();
+    root.innerHTML =
+      '<div class="draft-split">' +
+        '<aside class="draft-list">' +
+          '<div class="draft-list-head">' +
+            '<span class="draft-list-label">Drafts</span>' +
+            '<span class="draft-list-acts">' +
+              '<button class="icon-btn-sm" data-sa-add title="New draft"><i class="bi bi-plus-lg"></i></button>' +
+            '</span>' +
+          '</div>' +
+          '<div class="draft-rows" id="saDrafts"></div>' +
+        '</aside>' +
+        '<section class="draft-pane">' +
+          '<header class="draft-pane-head">' +
+            '<input class="draft-pane-title" id="saTitle" placeholder="Untitled" autocomplete="off">' +
+          '</header>' +
+          '<div class="draft-pane-body" id="draftEditor" contenteditable="true" spellcheck="false"></div>' +
+          '<div class="draft-pane-foot"><span id="saCount"></span><span id="saCount2"></span></div>' +
+        '</section>' +
+      '</div>';
+    openDraft(activeIndex());
+  }
+  window.PAGE_RENDERERS = { draft: renderDraftView };
+
+  /* ── typing ── */
+  document.addEventListener('input', function(e){
+    const list = drafts(), i = activeIndex();
+    if(e.target.id === 'draftEditor'){
+      list[i].body = e.target.innerHTML || '';
+      foot(); saveSoon();
+    } else if(e.target.id === 'saTitle'){
+      list[i].title = e.target.value || '';
+      const row = document.querySelector('#saDrafts .draft-row.on .draft-row-title');
+      if(row) row.textContent = listLabel(list[i]);
+      saveSoon();
+    }
+  });
+
+  /* ── the draft cards ── */
+  document.getElementById('page-draft').addEventListener('click', function(e){
+    const t = e.target;
+    if(t.closest('[data-sa-add]')){ newDraft(); return; }
+    const del = t.closest('[data-sa-del]');
+    if(del){
+      const list = drafts(), i = list.findIndex(function(d){ return d.id === del.dataset.saDel; });
+      if(i < 0 || !confirm('Delete this draft?')) return;
+      list.splice(i, 1);
+      S.config.draftActive = drafts()[0].id;
+      save();
+      DraftChat.close();
+      return;
+    }
+    const op = t.closest('[data-sa-open]');
+    if(op){
+      const i = drafts().findIndex(function(d){ return d.id === op.dataset.saOpen; });
+      if(i >= 0) openDraft(i);
+    }
+  });
+
+  /* ═══════════ the page bar: T · New draft / New Chat · toggle · sliders ═══════════ */
+  const FONTS = [
+    ['', 'Default'],
+    ['Georgia, serif', 'Georgia'],
+    ['"Times New Roman", serif', 'Times New Roman'],
+    ['Garamond, serif', 'Garamond'],
+    ['Palatino, serif', 'Palatino'],
+    ['Inter, system-ui, sans-serif', 'Inter'],
+    ['Helvetica, Arial, sans-serif', 'Helvetica'],
+    ['Verdana, sans-serif', 'Verdana'],
+    ['"Courier New", monospace', 'Courier New'],
+    ['"JetBrains Mono", ui-monospace, monospace', 'JetBrains Mono']
+  ];
+  let view = 'chat';
+
+  function buildPop(){
+    const pop = document.getElementById('saPop');
+    pop.innerHTML = '';
+    const sel = document.createElement('select');
+    sel.className = 'sel';
+    FONTS.forEach(function(f){
+      const o = document.createElement('option');
+      o.value = f[0]; o.textContent = f[1];
+      if((S.config.draftFont || '') === f[0]) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = function(){ S.config.draftFont = sel.value; applyTypo(); save(); };
+    pop.appendChild(row('Font', '', sel));
+
+    const size = document.createElement('input');
+    size.type = 'number'; size.className = 'inp'; size.min = 10; size.max = 60;
+    size.value = S.config.draftSize || 17;
+    size.oninput = function(){
+      S.config.draftSize = Math.max(10, Math.min(60, parseInt(size.value, 10) || 17));
+      applyTypo(); saveSoon();
+    };
+    pop.appendChild(row('Size', '', size));
+
+    const lead = document.createElement('input');
+    lead.type = 'number'; lead.className = 'inp'; lead.step = '0.05'; lead.min = 1; lead.max = 3;
+    lead.value = S.config.draftLead || 1.8;
+    lead.oninput = function(){
+      S.config.draftLead = Math.max(1, Math.min(3, parseFloat(lead.value) || 1.8));
+      applyTypo(); saveSoon();
+    };
+    pop.appendChild(row('Line height', '', lead));
+  }
+  function togglePop(force){
+    const pop = document.getElementById('saPop');
+    const show = force !== undefined ? force : pop.hidden;
+    if(show) buildPop();
+    pop.hidden = !show;
+    document.getElementById('saStatsPop').hidden = true;
+  }
+  function paintBar(){
+    const chat = view === 'chat';
+    const nb = document.getElementById('saNew');
+    nb.querySelector('i').className = 'bi bi-' + (chat ? 'chat-dots' : 'plus-lg');
+    document.getElementById('saNewLabel').textContent = chat ? 'New Chat' : 'New draft';
+    nb.title = chat ? 'New Chat' : 'New draft';
+    const vb = document.getElementById('saView');
+    vb.innerHTML = '<i class="bi bi-' + (chat ? 'journal-text' : 'stars') + '"></i>';
+    vb.title = chat ? 'Switch to draft' : 'Switch to AI chat';
+    document.getElementById('saSet').title = chat ? 'Chat AI settings' : 'Draft settings';
+    paintStatus();
+  }
+  function setView(v){
+    view = v;
+    togglePop(false);
+    if(v === 'chat') DraftChat.open(); else DraftChat.close();
+    paintBar();
+    
+        /* the panel's controls: inline + important, so no stylesheet can touch them */
+    const look = function(el, isSelect){
+      const S = el.style, I = 'important';
+      const set = function(k, v){ S.setProperty(k, v, I); };
+      set('border', '0');
+      set('outline', 'none');
+      set('box-shadow', 'none');
+      set('-webkit-appearance', 'none');
+      set('appearance', 'none');
+      set('background-color', 'var(--surface-3)');
+      set('color', 'var(--ink)');
+      set('height', '28px');
+      set('border-radius', '4px');
+      set('font', 'inherit');
+      set('font-size', '12.5px');
+      if(isSelect){
+        set('padding', '0 24px 0 8px');
+        /* background-image, never the shorthand — the shorthand would erase it */
+        set('background-image',
+          'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 16 16\' fill=\'%238b857c\'%3E%3Cpath d=\'M8 11L3 6h10z\'/%3E%3C/svg%3E")');
+        set('background-repeat', 'no-repeat');
+        set('background-position', 'right 7px center');
+      } else {
+        set('padding', '0 8px');
+        set('-moz-appearance', 'textfield');
+      }
+    };
+    pop.querySelectorAll('select, input').forEach(function(el){
+      look(el, el.tagName === 'SELECT');
+    });
+
+  }
+
+  /* ═══════════ row 4 · the status bar ═══════════ */
+  function stats(){
+    const chats = Array.isArray(D_.aiChats) ? D_.aiChats : [];
+    let msgs = 0, aiWords = 0;
+    chats.forEach(function(c){
+      const m = c.messages || [];
+      msgs += m.length;
+      m.forEach(function(x){ aiWords += words(x.text); });
+    });
+    const dl = drafts();
+    let dWords = 0;
+    dl.forEach(function(d){ dWords += words(d.body); });
+    return { chats:chats.length, msgs:msgs, aiWords:aiWords, drafts:dl.length, dWords:dWords };
+  }
+  function providerLine(){
+    const c = S.config.chatAI || {};
+    const p = aiProvider(c.provider || 'groq');
+    const model = (c.models && c.models[p.id]) || (p.models && p.models[0] && p.models[0].id) || '—';
+    const keyed = p.keyless || !!(c.keys && c.keys[p.id]);
+    return { name: p.name, model: model, keyed: keyed };
+  }
+  function paintStatus(){
+    const L = document.getElementById('saSbLeft');
+    const R = document.getElementById('saSbRight');
+    if(!L || !R) return;
+    const chat = view === 'chat';
+    const p = providerLine();
+    const s = stats();
+    const list = drafts(), i = activeIndex();
+    const active = list[i] || { body:'' };
+
+    L.innerHTML =
+      '<span><span class="sb-dot' + (p.keyed ? '' : ' warn') + '"></span>' +
+        (chat ? 'AI chat' : 'Draft') + '</span>' +
+      '<span>' + esc(p.name) + '</span>' +
+      '<span>' + esc(p.model) + '</span>';
+
+    R.innerHTML =
+      (chat
+        ? '<span><i class="bi bi-chat-dots"></i>' + s.chats + ' chats</span>' +
+          '<span><i class="bi bi-envelope"></i>' + s.msgs + ' messages</span>'
+        : '<span><i class="bi bi-journal-text"></i>' + words(active.body) + ' words</span>' +
+          '<span><i class="bi bi-123"></i>' + textOf(active.body).length + ' chars</span>') +
+      '<span><i class="bi bi-collection"></i>' + s.drafts + ' drafts</span>';
+  }
+  function buildStatsPop(){
+    const pop = document.getElementById('saStatsPop');
+    pop.innerHTML = '';
+    const s = stats(), p = providerLine();
+    const c = S.config.chatAI || {};
+    const t = document.createElement('div');
+    t.className = 'set-card-title';
+    t.innerHTML = '<i class="bi bi-bar-chart"></i> Chat statistics';
+    pop.appendChild(t);
+    pop.appendChild(row('Chats', 'Conversations in this browser', String(s.chats)));
+    pop.appendChild(row('Messages', s.msgs + ' sent and received', String(s.msgs)));
+    pop.appendChild(row('Words in chats', 'Everything you and the AI wrote', String(s.aiWords)));
+    pop.appendChild(row('Drafts', 'Drafts in this browser', String(s.drafts)));
+    pop.appendChild(row('Words in drafts', 'Across every draft', String(s.dWords)));
+    pop.appendChild(row('Provider', p.keyed ? 'Key stored' : 'No key yet — open Settings', p.name));
+    pop.appendChild(row('Model', 'Chat only', p.model));
+    pop.appendChild(row('Temperature', 'Lower is steadier', Math.round((c.temperature != null ? c.temperature : 0.7) * 100) + '%'));
+  }
+  function toggleStats(force){
+    const pop = document.getElementById('saStatsPop');
+    const show = force !== undefined ? force : pop.hidden;
+    if(show) buildStatsPop();
+    pop.hidden = !show;
+    document.getElementById('saPop').hidden = true;
+  }
+
+  /* ═══════════ wiring ═══════════ */
+  document.getElementById('saView').onclick = function(){ setView(view === 'chat' ? 'draft' : 'chat'); };
+  document.getElementById('saNew').onclick = function(){
+    if(view === 'chat'){ DraftChat.newChat(); DraftChat.render(); paintStatus(); }
+    else newDraft();
+  };
+  document.getElementById('saTypo').onclick = function(e){ e.stopPropagation(); togglePop(); };
+  document.getElementById('saSet').onclick = function(e){
+    e.stopPropagation();
+    if(view === 'chat') DraftChat.settings();
+    else togglePop();
+  };
+  document.getElementById('saSetTop').onclick = function(e){
+    e.stopPropagation();
+    if(view === 'chat') DraftChat.settings();
+    else { toggleStats(false); togglePop(); }
+  };
+  document.getElementById('saStats').onclick = function(e){ e.stopPropagation(); toggleStats(); };
+
+  document.addEventListener('click', function(e){
+    const t = e.target;
+    if(t.closest('#saPop') || t.closest('#saTypo') || t.closest('#saSet') ||
+       t.closest('#saStatsPop') || t.closest('#saStats')) return;
+    document.getElementById('saPop').hidden = true;
+    document.getElementById('saStatsPop').hidden = true;
+  }, true);
+
+  paintBar();
+  paintStatus();
+  setInterval(paintStatus, 1000);      /* the chat writes its own state; this keeps the bar true */
+})();
+
+</script>
+<script src="draft-chat.js"></script>
+<script>
+  window.addEventListener('load', function(){
+    if(!window.DraftChat) return;
+    DraftChat.open();
+    PAGE_RENDERERS.draft(document.getElementById('page-draft'));
+  });
+</script>
+
+<!-- ═══ the T panel: the last word on its look — nothing can outrank this ═══ -->
+<style>
+html body #saPop,
+html body #saStatsPop{ border:0 !important; outline:0 !important; }
+
+html body #saPop .set-row{
+  border-bottom:0 !important;
+  padding:6px 0 !important;
+}
+html body #saPop .set-row:first-of-type{ padding-top:0 !important; }
+html body #saPop .set-row:last-child{ padding-bottom:0 !important; }
+html body #saPop .set-label{ font-size:12.5px !important; }
+html body #saPop .set-desc{ font-size:11px !important; }
+
+html body #saPop .sel,
+html body #saPop .inp{
+  background:var(--surface-3) !important;
+  border:0 !important;
+  outline:0 !important;
+  box-shadow:none !important;
+  -webkit-appearance:none !important;
+  appearance:none !important;
+  border-radius:4px !important;
+  height:28px !important;
+  padding:0 8px !important;
+  color:var(--ink) !important;
+  font:inherit !important;
+}
+html body #saPop select.sel{
+  padding-right:24px !important;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16' fill='%238b857c'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important;
+  background-position:right 7px center !important;
+}
+html body #saPop input[type=number]{ -moz-appearance:textfield !important; }
+html body #saPop input[type=number]::-webkit-outer-spin-button,
+html body #saPop input[type=number]::-webkit-inner-spin-button{
+  -webkit-appearance:none !important; margin:0 !important;
+}
+</style>
+
+</body>
+</html>
